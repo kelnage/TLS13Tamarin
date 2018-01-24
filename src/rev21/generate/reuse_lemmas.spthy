@@ -159,16 +159,18 @@ lemma matching_rms_nonces [reuse]:
         CNonces(tid, actor, 'client', <nonces>)@a & 
         #a < #i"
 
-// Only constructible function
+// Only constructible function (implies never Out?)
 lemma ku_extract [reuse, use_induction]:
   "All a b #i. KU(Extract(a, b))@i ==> Ex #j #k. KU(a)@j & KU(b)@k & #j < #i & #k < #i"
 
+// Only constructible, unless a PSK reveal has happened
 lemma ku_expand [reuse, use_induction]:
 "All secret label len #i. KU(Expand(secret, label, len))@i ==>
   (Ex #j. KU(secret)@j & #j < #i) |
   (not (Ex #k. KU(secret)@k & #k < #i) &
   (Ex actor #l. RevealPSK(actor, Expand(secret, label, len))@l & #l < #i))"
 
+// To learn g^xy, a reveal for x or y must have happened
 lemma dh_chal_dual [reuse]:
   "All tid tid2 actor actor2 g x y gx gy gxy #i #j #r.
       DHChal(g, x, y, gx, gy, gxy)@i & Instance(tid, actor, 'client')@i &
@@ -178,6 +180,7 @@ lemma dh_chal_dual [reuse]:
       (Ex #p. (RevDHExp(tid, actor,  x)@p & #p < #r)) | 
       (Ex #q. (RevDHExp(tid2, actor2, y)@q & #q < #r))"
 
+// Unrolled version of ku_extract? (Attacker knows '0')
 lemma ku_hs [reuse]:
   "All tid actor role es hs res_psk gxy #i #j.
     RHS(tid, actor, role, <hs>)@i &
@@ -186,25 +189,24 @@ lemma ku_hs [reuse]:
     KU(hs)@j ==>
       Ex #k #l. KU(gxy)@k & KU(res_psk)@l & #k < #j & #l < #j"
 
+// To learn ltkA, a Ltk reveal must have happened
 lemma ku_ltk [reuse]:
   "All actor ltkA #i #j.
     GenLtk(actor, ltkA)@i & KU(ltkA)@j ==>
       Ex #k. RevLtk(actor)@k & #k < #j"
 
+// To learn PSK, a PSK reveal must have happened
 lemma ku_fresh_psk [reuse]:
   "All ticket res_psk #i #k.
       FreshPSK(ticket,res_psk)@i & KU(res_psk)@k ==> 
         Ex actor #j. 
           RevealPSK(actor, res_psk)@j & #j < #k"
 
+// Require precise structure for terms
 lemma hsms_derive [reuse]:
   "All tid actor role hs ms #i. 
     RHSMS(tid, actor, role, <hs,ms>)@i ==>
       ms = Extract('0', hs)"
-
-// For any running(PostHS...) either the auth_status was set in the main HS and
-// unchanged (along with the RMS), or there was post-hs auth, which means the
-// auth_status is 'auth', the actor is a server*/
 
 // For any RPostHS...(tid, , , <>) either the auth_status was set in the main HS and
 // unchanged (along with the RMS), or there was post-hs auth, which means the
@@ -238,24 +240,28 @@ lemma posths_rms_weak [reuse, use_induction]:
                 ms = Extract('0', hs) & rms = Expand(ms, <'rms', <h(messages)>>, '32') & #j < #i &
                 auth_status = <aas, pas>"
 
+// Role-wise (message) => (rms)
 lemma matching_transcripts_posths [reuse]:
   "All tid tid2 actor peer actor2 peer2 role role2 rms rms2 messages #i #j.
     RRMS(tid, actor, role, <peer2,rms,messages>)@i &
     RRMS(tid2, peer, role2, <actor2,rms2,messages>)@j & not (role = role2) ==>
      rms = rms2"
 
+// Role-wise (rms) => (message)
 lemma matching_rms_posths [reuse]:
   "All tid tid2 actor peer actor2 peer2 role role2 rms messages messages2 #i #j.
     RRMS(tid, actor, role, <peer2,rms,messages>)@i &
     RRMS(tid2, peer, role2, <actor2,rms,messages2>)@j & not (role = role2) ==>
      messages = messages2"
 
+// (role, rms) => (actor, tid)
 lemma matching_rms_actors [reuse]:
   "All tid tid2 actor peer actor2 peer2 role rms messages messages2 #i #j.
     RRMS(tid, actor, role, <peer,rms,messages>)@i &
     RRMS(tid2, actor2, role, <peer2,rms,messages2>)@j ==>
      actor = actor2 & tid = tid2"
 
+// To learn rms, a reveal of either x, y, or a previous participants rms must have occurred
 lemma matching_sessions [reuse, use_induction, hide_lemma=posths_rms]:
   "All tid tid2 actor actor2 role role2 peer peer2 rms messages #i #j #k.
     RRMS(tid, actor, role, <peer2,rms,messages>)@i & 
@@ -267,11 +273,13 @@ lemma matching_sessions [reuse, use_induction, hide_lemma=posths_rms]:
       (Ex rms2 #r. RevealPSK(actor, rms2)@r & #r < #k) |
       (Ex rms2 #r. RevealPSK(peer, rms2)@r & #r < #k)"
 
+// To learn a valid certificate signature, either the attacker must know the ltkA or the signature must have been generated in the protocol (weirdly specific?)
 lemma sig_origin [reuse]:
   "All certificate certificate_request_context signature verify_data hs_key sig_messages ltkA  #i.
         KU(senc{<'11',certificate_request_context,certificate>, <'15',  signature >, <'20',verify_data>}hs_key)@i & (signature = sign{sig_messages}ltkA) ==>
       (Ex #j. KU(ltkA)@j & #j < i) | (Ex #k. UseLtk(ltkA, signature)@k & #k < #i)"
 
+// Role-wise (rms, messages, actor) => (peer) or peer that actor authenticated with is compromised
 lemma auth_psk [reuse, use_induction, hide_lemma=posths_rms_weak]:
   "All tid tid2 actor actor2 role role2 peer peer2 rms messages aas #i #j #k.
     RRMS(tid, actor, role, <peer2,rms,messages>)@i & 
@@ -282,6 +290,7 @@ lemma auth_psk [reuse, use_induction, hide_lemma=posths_rms_weak]:
       peer2 = peer |
       Ex #r. RevLtk(peer2)@r & #r < #k"
 
+// 
 lemma rms_derives_hs[reuse,hide_lemma=sig_origin]:
   "All tid actor role peer hs rms messages #i #j #k.
      RRMS(tid, actor, role, <peer,rms,messages>)@j &
@@ -293,12 +302,14 @@ lemma rms_derives_hs[reuse,hide_lemma=sig_origin]:
          (Ex #l. RevealPSK(actor, rms)@l & #l < #k) |
          (Ex #l. RevealPSK(peer, rms)@l & #l < #k)"
 
+// (tid, actor, role) => (hs)
 lemma matching_hsms [reuse]:
   "All tid actor role hs hs2 ms #i #j.
     CHS(tid, actor, role, <hs2>)@i &
     RHSMS(tid, actor, role, <hs,ms>)@j ==>
       hs = hs2"
 
+// 
 lemma post_master_secret [reuse, hide_lemma=posths_rms]:
   "All tid actor peer role hs rms aas messages #i #k.
     RPostHS(tid, actor, role, <hs,rms,peer,<aas,'auth'>,messages>)@i & 
@@ -311,12 +322,14 @@ lemma post_master_secret [reuse, hide_lemma=posths_rms]:
       (Ex rms2 #r. RevealPSK(actor, rms2)@r & #r < #k) |
       (Ex rms2 #r. RevealPSK(peer, rms2)@r & #r < #k)"
 
+// (tid, actor, role) => (peer, rms, msgs, hs)
 lemma invariant_post_hs [reuse, use_induction, hide_lemma=posths_rms]:
   "All tid actor peer peer2 role hs hs2 rms rms2 as as2 msgs msgs2 #i #j.
     RPostHS(tid, actor, role, <hs,rms,peer,as,msgs>)@i & 
     RPostHS(tid, actor, role, <hs2,rms2,peer2,as2,msgs2>)@j ==>
       peer = peer2 & rms = rms2 & msgs = msgs2 & hs = hs2"
 
+// To learn a hs, there must be a reveal
 lemma handshake_secret [reuse, use_induction, hide_lemma=posths_rms_weak]:
   "All tid actor peer role hs aas #i #k.
     CHS(tid, actor, role, <hs>)@i &
@@ -328,6 +341,7 @@ lemma handshake_secret [reuse, use_induction, hide_lemma=posths_rms_weak]:
         (Ex rms #r. RevealPSK(actor, rms)@r & #r < #k) |
         (Ex rms #r. RevealPSK(peer, rms)@r & #r < #k)"
 
+// To learn a hs outside of PSK key exchange mode, there must be a key reveal
 lemma pfs_handshake_secret [reuse, hide_lemma=posths_rms_weak]:
   "All tid actor peer role hs aas psk_ke_mode #i #k.
     CHS(tid, actor, role, <hs>)@i &
@@ -340,6 +354,8 @@ lemma pfs_handshake_secret [reuse, hide_lemma=posths_rms_weak]:
         (Ex tid4 y #r. RevDHExp(tid4, actor, y)@r & #r < #i) |
         (Ex rms #r. RevealPSK(actor, rms)@r & #r < #i) |
         (Ex rms #r. RevealPSK(peer, rms)@r & #r < #i)"
+
+// Security properties
 
 /*
   Unilateral (entity) authentication
@@ -408,20 +424,24 @@ lemma injective_mutual_entity_authentication [reuse, hide_lemma=posths_rms]:
           Ex role2 tid2 #j. RNonces(tid2, peer, role2, <nonces>)@j & #j < #i & not role = role2 &
           (All tid3 peer2 #k. RNonces(tid3, peer2, role2, <nonces>)@k ==> #k = #j)"
 
+// To reveal a DH exp x for a (tid, actor), x must have been generated by (tid, actor)
 lemma dh_exp_invariant  [use_induction, reuse]:
   "All tid actor x #i. RevDHExp(tid, actor, x)@i ==>
     Ex #j. DH(tid, actor, x)@j & #j < i"
 
+// (DH, x) => (tid, actor, timepoint)
 lemma one_dh_per_x  [reuse]:
   "All tid tid2 x actor actor2 #i #j. 
     DH(tid, actor, x)@i & DH(tid2, actor2, x)@j ==> #i = #j"
 
+// Delete comes after DH, and all RevDH must occur between
 lemma rev_dh_ordering  [reuse, use_induction]:
   "All tid actor x #j. 
     DeleteDH(tid, actor, x)@j==>
       ((Ex #i. DH(tid, actor, x) @ i & i < j) & 
        (All #r. RevDHExp(tid, actor, x) @ r  ==>  r < j))"
 
+// RevealDH comes before RHS (which co-occurs with DeleteDH!)
 lemma rev_dh_before_hs  [reuse]:
   "all tid actor role hs x #i #j.
     rhs(tid, actor, role, <hs>)@j &
