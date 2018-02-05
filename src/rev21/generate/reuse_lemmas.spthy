@@ -447,11 +447,4 @@ lemma rev_dh_ordering  [reuse, use_induction]:
       ((Ex #i. DH(tid, actor, x) @ i & i < j) & 
        (All #r. RevDHExp(tid, actor, x) @ r  ==>  r < j))"
 
-// RevealDH comes before RHS (which co-occurs with DeleteDH!)
-lemma rev_dh_before_hs  [reuse]:
-  "all tid actor role hs x #i #j.
-    rhs(tid, actor, role, <hs>)@j &
-    revdhexp(tid, actor, x)@i ==>
-    #i < #j"
-
 end
