@@ -19,6 +19,9 @@ restriction one_role_per_actor:
     "All actor tid tid2 role role2 #i #j. Start(tid, actor, role)@i & Start(tid2, actor, role2)@j
         ==> role = role2"
 
+// May be derived from the unify data flow graph, but likely not sufficient. Relies on freshness of tid and when the action facts occur
+// Says they can both co-occur, but only in the same rule instance
+
 lemma one_C0_per_tid [reuse]:
     "All tid #i #j. C0(tid)@i & C0(tid)@j ==> #i = #j"
 
@@ -91,6 +94,8 @@ lemma one_S3_per_tid [reuse]:
 lemma one_S3_cert_per_tid [reuse]:
     "All tid #i #j. S3_cert(tid)@i & S3_cert(tid)@j ==> #i = #j"
 
+// Says they can never co-occur for a given tid
+
 lemma S1_vs_S1_PSK_DHE [reuse]:
     "All tid #i #j. S1(tid)@i & S1_PSK_DHE(tid)@j ==> F"
 
@@ -122,11 +127,13 @@ lemma C2d_vs_C2d_PSK [reuse]:
     "All tid #i #j. C2d(tid)@i & C2d_PSK(tid)@j ==> F"
 
 // Standard invariants: exists a Start action with same term args for all Instance actions
+// Would not be detected in the default model since it uses different state facts for different stages of the protocol
 lemma tid_invariant [use_induction, reuse]:
   "All tid actor role #i. Instance(tid, actor, role)@i==>
       (Ex #j. Start(tid, actor, role)@j & (#j < #i))"
 
 // Require all action fact and fresh value pairings are unique (needs all instatiations of that action fact to use a fresh term in that position)
+// Thus invariant (action) fact + fresh term = other invariant terms are always fixed at a given start (and hence every subsequent occurrence)
 
 // (Start, tid) => (actor, role, timepoint)
 lemma one_start_per_tid [reuse]:
@@ -144,6 +151,7 @@ lemma one_dh_per_x  [reuse]:
     DH(tid, actor, x)@i & DH(tid2, actor2, x)@j ==> #i = #j"
 
 // Require all occurrences of a pair of action facts with matching term arguments X also have matching term arguments Y
+// Can we derive these correlation automatically?
 
 // (role, nonces) => (tid, actor)
 lemma matching_nonces [reuse]:
@@ -175,6 +183,9 @@ lemma matching_hsms [reuse]:
     RHSMS(tid, actor, role, <hs,ms>)@j ==>
       hs = hs2"
 
+// The following lemmas are role-wise, i.e. the different actions facts occur on the client and server
+// Roles can be easily extracted if represented as a term argument - perhaps not so obvious for fact symbols (can be derived via the unify data flow graph?)
+
 // Role-wise (message) => (rms)
 lemma matching_transcripts_posths [reuse]:
   "All tid tid2 actor peer actor2 peer2 role role2 rms rms2 messages #i #j.
@@ -200,7 +211,10 @@ lemma auth_psk [reuse, use_induction, hide_lemma=posths_rms_weak]:
       peer2 = peer |
       Ex #r. RevLtk(peer2)@r & #r < #k"
 
-// Action correspondance
+// Commited => Running?
+// Can be found in the unify flow graph, but not sufficient to prove
+
+// Action correspondence
 lemma consistent_nonces [reuse]:
   "All tid actor role nonces #i. 
     CNonces(tid, actor, role, <nonces>)@i ==>
@@ -216,9 +230,23 @@ lemma matching_rms_nonces [reuse]:
         CNonces(tid, actor, 'client', <nonces>)@a & 
         #a < #i"
 
+// Only constructible functions. Means that we have to prove that the function is never output - may be doable with AI?
+// Taint analysis + function modelling - reveals need to be identified though
+
 // Only constructible function (implies never Out?)
 lemma ku_extract [reuse, use_induction]:
   "All a b #i. KU(Extract(a, b))@i ==> Ex #j #k. KU(a)@j & KU(b)@k & #j < #i & #k < #i"
+
+// Unrolled version of ku_extract? (Attacker knows '0')
+lemma ku_hs [reuse]:
+  "All tid actor role es hs res_psk gxy #i #j.
+    RHS(tid, actor, role, <hs>)@i &
+    hs = Extract(gxy, es) &
+    es = Extract(res_psk, '0') &
+    KU(hs)@j ==>
+      Ex #k #l. KU(gxy)@k & KU(res_psk)@l & #k < #j & #l < #j"
+
+// Reveals need special handling. Could they be represented differently in models?
 
 // Only constructible, unless a PSK reveal has happened
 lemma ku_expand [reuse, use_induction]:
@@ -236,15 +264,6 @@ lemma dh_chal_dual [reuse]:
       ==> 
       (Ex #p. (RevDHExp(tid, actor,  x)@p & #p < #r)) | 
       (Ex #q. (RevDHExp(tid2, actor2, y)@q & #q < #r))"
-
-// Unrolled version of ku_extract? (Attacker knows '0')
-lemma ku_hs [reuse]:
-  "All tid actor role es hs res_psk gxy #i #j.
-    RHS(tid, actor, role, <hs>)@i &
-    hs = Extract(gxy, es) &
-    es = Extract(res_psk, '0') &
-    KU(hs)@j ==>
-      Ex #k #l. KU(gxy)@k & KU(res_psk)@l & #k < #j & #l < #j"
 
 // To learn ltkA, a Ltk reveal must have happened
 lemma ku_ltk [reuse]:
